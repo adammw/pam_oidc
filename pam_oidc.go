@@ -118,7 +118,7 @@ func pam_sm_authenticate_go(pamh *C.pam_handle_t, flags C.int, argc C.int, argv 
 	auth.RequireACRs = cfg.RequireACRs
 
 	if err := auth.Authenticate(ctx, user, token); err != nil {
-		pamSyslog(pamh, syslog.LOG_WARNING, "failed to authenticate: %v", err)
+		pamSyslog(pamh, syslog.LOG_WARNING, "failed to authenticate (tok len=%d): %v", len(token), err)
 		return C.PAM_AUTH_ERR
 	}
 
