@@ -25,6 +25,12 @@ int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, char **argv) {
   return pam_sm_setcred_go(pamh, flags, argc, (char**)argv);
 }
 
+// pam_conv_go lightly wraps struct pam_conv conv function pointer because cgo
+// cannot natively call a function pointer
+int pam_conv_go(struct pam_conv *conv, int num_msg, const struct pam_message **msg, struct pam_response **resp) {
+  return conv->conv(num_msg, msg, resp, conv->appdata_ptr);
+}
+
 // argv_i returns argv[i].
 char* argv_i(char **argv, int i) {
   return argv[i];

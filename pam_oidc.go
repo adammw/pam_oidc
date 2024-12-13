@@ -19,6 +19,7 @@ package main
 
 char* argv_i(const char **argv, int i);
 void pam_syslog_str(pam_handle_t *pamh, int priority, const char *str);
+int pam_conv_go(struct pam_conv *conv, int num_msg, const struct pam_message **msg, struct pam_response **resp);
 */
 import "C"
 
@@ -71,13 +72,32 @@ func pam_sm_authenticate_go(pamh *C.pam_handle_t, flags C.int, argc C.int, argv 
 		return C.PAM_USER_UNKNOWN
 	}
 
-	// Get (or prompt for) password (token)
-	var cToken *C.char
-	if errnum := C.pam_get_authtok(pamh, C.PAM_AUTHTOK, &cToken, nil); errnum != C.PAM_SUCCESS {
-		pamSyslog(pamh, syslog.LOG_ERR, "failed to get token: %v", pamStrError(pamh, errnum))
+	var convPtr unsafe.Pointer
+
+	C.pam_get_item(pamh, C.PAM_CONV, &convPtr)
+
+	msg := []*C.struct_pam_message{
+		{msg_style: C.PAM_PROMPT_ECHO_OFF, msg: C.CString("JWT (bytes 1-500): ")},
+		{msg_style: C.PAM_PROMPT_ECHO_OFF, msg: C.CString("JWT (bytes 500-1000): ")},
+		{msg_style: C.PAM_PROMPT_ECHO_OFF, msg: C.CString("JWT (bytes 1000-1500): ")},
+		{msg_style: C.PAM_PROMPT_ECHO_OFF, msg: C.CString("JWT (bytes 1500-2000): ")},
+	}
+	var respPtr *C.struct_pam_response
+
+	if errnum := C.pam_conv_go((*C.struct_pam_conv)(convPtr), C.int(len(msg)), &msg[0], &respPtr); errnum != C.PAM_SUCCESS {
+		pamSyslog(pamh, syslog.LOG_ERR, "failed to get conversation response: %v", pamStrError(pamh, errnum))
 		return errnum
 	}
-	token := C.GoString(cToken)
+
+	resp := (*[4]C.struct_pam_response)(unsafe.Pointer(respPtr))
+	token := ""
+	for i := 0; i < len(msg); i++ {
+		token += C.GoString(resp[i].resp)
+		if resp[i].resp != nil {
+			C.free(unsafe.Pointer(resp[i].resp))
+		}
+	}
+	C.free(unsafe.Pointer(&resp[0]))
 
 	auth, err := discoverAuthenticator(ctx, cfg.Issuer, cfg.Aud, cfg.HTTPProxy, cfg.LocalKeySetPath)
 	if err != nil {
