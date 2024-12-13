@@ -20,6 +20,10 @@ import (
 	"github.com/pardot/oidc/signer"
 )
 
+func TestDiscoverAuthenticator(t *testing.T) {
+	// TODO
+}
+
 func TestAuthenticate(t *testing.T) {
 	now := time.Now()
 

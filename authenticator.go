@@ -8,12 +8,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"text/template"
 
+	"github.com/go-jose/go-jose/v3"
 	"github.com/pardot/oidc"
 	"github.com/pardot/oidc/discovery"
 	"golang.org/x/net/http/httpproxy"
@@ -50,7 +53,7 @@ type authenticator struct {
 	aud      string
 }
 
-func discoverAuthenticator(ctx context.Context, issuer string, aud string, httpProxy string) (*authenticator, error) {
+func discoverAuthenticator(ctx context.Context, issuer string, aud string, httpProxy string, localKeySetPath string) (*authenticator, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if httpProxy != "" {
 		// Use no_proxy from environment, if present, but override proxy URL
@@ -64,14 +67,51 @@ func discoverAuthenticator(ctx context.Context, issuer string, aud string, httpP
 		}
 	}
 
-	client, err := discovery.NewClient(ctx, issuer, discovery.WithHTTPClient(&http.Client{
-		Transport: transport,
-	}))
-	if err != nil {
-		return nil, fmt.Errorf("discovering verifier: %v", err)
+	var keySource oidc.KeySource
+
+	if issuer != "" {
+		client, err := discovery.NewClient(ctx, issuer, discovery.WithHTTPClient(&http.Client{
+			Transport: transport,
+		}))
+		if err != nil {
+			if localKeySetPath != "" {
+				return nil, fmt.Errorf("discovering verifier: %v", err)
+			} else {
+				// TODO : emit warning via pamSyslog
+			}
+		} else {
+			// if no `error, save the fetched key set to the local path
+			keys, err := client.PublicKeys(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("fetching public keys: %v", err)
+			}
+			keyset, err := json.Marshal(keys)
+			if err != nil {
+				return nil, fmt.Errorf("marshaling key set: %v", err)
+			}
+			if err := os.WriteFile(localKeySetPath, keyset, 0600); err != nil {
+				return nil, fmt.Errorf("caching key set: %v", err)
+			}
+			keySource = client
+		}
 	}
 
-	verifier := oidc.NewVerifier(issuer, client)
+	if keySource == nil && localKeySetPath != "" {
+		var keys jose.JSONWebKeySet
+		keyset, err := os.ReadFile(localKeySetPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading key set: %v", err)
+		}
+		if err := json.Unmarshal(keyset, &keys); err != nil {
+			return nil, fmt.Errorf("unmarshaling key set: %v", err)
+		}
+		if len(keys.Keys) == 0 {
+			return nil, fmt.Errorf("no keys in key set")
+		}
+		keySource = oidc.NewStaticKeysource(keys)
+	}
+
+	verifier := oidc.NewVerifier(issuer, keySource)
 	return &authenticator{
 		verifier: verifier,
 		aud:      aud,

@@ -30,6 +30,10 @@ type config struct {
 	RequireACRs []string
 	// HTTPProxy is the HTTP proxy server used to connect to HTTP services.
 	HTTPProxy string
+	// LocalKeySetPath is the path to a local JSON Web Key Set file.
+	// If both LocalKeySetPath and Issuer are set, LocalKeySetPath will be overwritten with
+	// the fetched JWKS from the issuer if available, or used if not.
+	LocalKeySetPath string
 }
 
 func configFromArgs(args []string) (*config, error) {
@@ -58,6 +62,8 @@ func configFromArgs(args []string) (*config, error) {
 			c.RequireACRs = strings.Split(parts[1], ",")
 		case "http_proxy":
 			c.HTTPProxy = parts[1]
+		case "local_key_set":
+			c.LocalKeySetPath = parts[1]
 		default:
 			return nil, fmt.Errorf("unknown option: %v", parts[0])
 		}
