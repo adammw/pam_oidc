@@ -84,7 +84,9 @@ func pam_sm_authenticate_go(pamh *C.pam_handle_t, flags C.int, argc C.int, argv 
 		{msg_style: C.PAM_PROMPT_ECHO_OFF, msg: C.CString("JWT (bytes 1500-2000): ")},
 	}
 	var pinner runtime.Pinner
-	pinner.Pin(&msg[0])
+	for _, m := range msg {
+		pinner.Pin(unsafe.Pointer(m))
+	}
 	defer pinner.Unpin()
 	var respPtr *C.struct_pam_response
 
