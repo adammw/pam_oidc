@@ -12,5 +12,8 @@ rpm: $(MODULE).so
 test:
 	go test -v ./...
 
+install:
+	install $(MODULE).so /lib/x86_64-linux-gnu/security/$(MODULE).so
+
 clean:
 	rm -f $(MODULE).so $(MODULE).h
