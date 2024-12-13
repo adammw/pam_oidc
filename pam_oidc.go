@@ -27,6 +27,7 @@ import (
 	"context"
 	"fmt"
 	"log/syslog"
+	"runtime"
 	"unsafe"
 )
 
@@ -82,12 +83,20 @@ func pam_sm_authenticate_go(pamh *C.pam_handle_t, flags C.int, argc C.int, argv 
 		{msg_style: C.PAM_PROMPT_ECHO_OFF, msg: C.CString("JWT (bytes 1000-1500): ")},
 		{msg_style: C.PAM_PROMPT_ECHO_OFF, msg: C.CString("JWT (bytes 1500-2000): ")},
 	}
+	var pinner runtime.Pinner
+	pinner.Pin(&msg[0])
+	defer pinner.Unpin()
 	var respPtr *C.struct_pam_response
 
 	if errnum := C.pam_conv_go((*C.struct_pam_conv)(convPtr), C.int(len(msg)), &msg[0], &respPtr); errnum != C.PAM_SUCCESS {
 		pamSyslog(pamh, syslog.LOG_ERR, "failed to get conversation response: %v", pamStrError(pamh, errnum))
 		return errnum
 	}
+	defer func() {
+		if respPtr != nil {
+			C.free(unsafe.Pointer(respPtr))
+		}
+	}()
 
 	resp := (*[4]C.struct_pam_response)(unsafe.Pointer(respPtr))
 	token := ""
@@ -97,7 +106,6 @@ func pam_sm_authenticate_go(pamh *C.pam_handle_t, flags C.int, argc C.int, argv 
 			C.free(unsafe.Pointer(resp[i].resp))
 		}
 	}
-	C.free(unsafe.Pointer(&resp[0]))
 
 	auth, err := discoverAuthenticator(ctx, cfg.Issuer, cfg.Aud, cfg.HTTPProxy, cfg.LocalKeySetPath)
 	if err != nil {
